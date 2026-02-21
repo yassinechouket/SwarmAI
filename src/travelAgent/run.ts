@@ -88,7 +88,7 @@ export async function runAgent(
 
     try{
       for await(const chunk of result.fullStream) {
-      if(chunk.type=="text-delta"){
+      if(chunk.type==="text-delta"){
         currentText += chunk.text;
         callbacks.onToken(chunk.text);
       }

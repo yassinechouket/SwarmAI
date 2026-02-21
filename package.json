@@ -31,6 +31,7 @@
     "@lmnr-ai/lmnr": "^0.7.9",
     "@types/shelljs": "^0.8.17",
     "ai": "^5.0.102",
+    "amadeus": "^11.0.0",
     "dotenv": "^17.2.3",
     "googleapis": "^171.4.0",
     "ink": "^6.5.1",
