@@ -3,35 +3,100 @@ import { z } from "zod"
 import Amadeus from "amadeus"
 
 const amadeus = new Amadeus({
-  clientId: process.env.AMADEUS_API_KEY!,
-  clientSecret: process.env.AMADEUS_API_SECRET!
+  clientId: process.env.AMADEUS_API_KEY ?? "",
+  clientSecret: process.env.AMADEUS_API_SECRET ?? ""
 })
+
+
+
+interface FlightSegment {
+  departure: { iataCode: string; at: string }
+  arrival:   { iataCode: string; at: string }
+  carrierCode: string
+}
+
+interface FlightOffer {
+  price: { total: string; currency: string }
+  itineraries: { segments: FlightSegment[] }[]
+}
+
+interface HotelListItem { hotelId: string }
+
+interface HotelOffer {
+  hotel: { hotelId: string; name: string; rating: string }
+  offers?: {
+    price?: { total: string; currency: string }
+    room?:  { typeEstimated?: { category: string } }
+  }[]
+}
+
+interface GeoResult {
+  geometry: { location: { lat: number; lng: number } }
+}
+
+interface PlaceResult {
+  name: string
+  rating: number
+  vicinity: string
+}
+
+
+
+async function resolveCityToIata(city: string): Promise<string> {
+  const response = await amadeus.referenceData.locations.get({
+    keyword: city,
+    subType: "CITY,AIRPORT",
+    "page[limit]": "1"
+  })
+
+  if (!response.data.length) {
+    throw new Error(`City not found: ${city}`)
+  }
+
+  const location = response.data[0] as { iataCode: string }
+  return location.iataCode
+}
 
 export const searchFlightsTool = tool({
   name: "searchFlights",
   description: "Search flights between two cities",
+
   inputSchema: z.object({
-    origin: z.string().describe("IATA code, example: TUN"),
-    destination: z.string().describe("IATA code, example: CDG"),
-    date: z.string().describe("Format YYYY-MM-DD")
+    origin: z.string().describe("City or airport name, example: Tunis"),
+    destination: z.string().describe("City or airport name, example: Paris"),
+    departureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    adults: z.number().min(1).default(1),
+    returnDate: z.string().optional()
   }),
 
-  execute: async ({ origin, destination, date }) => {
+  execute: async ({ origin, destination, departureDate, adults, returnDate }) => {
     try {
-      const response = await amadeus.shopping.flightOffersSearch.get({
-        originLocationCode: origin,
-        destinationLocationCode: destination,
-        departureDate: date,
-        adults: "1",
-        max: "5"
-      })
+      // STEP 1: resolve city → IATA
+      const originCode = await resolveCityToIata(origin)
+      const destinationCode = await resolveCityToIata(destination)
 
-      
-      return response.data.map((flight: any) => ({
+      const params: Record<string, string> = {
+        originLocationCode: originCode,
+        destinationLocationCode: destinationCode,
+        departureDate,
+        adults: adults.toString(),
+        max: "5"
+      }
+
+      if (returnDate) {
+        params.returnDate = returnDate
+      }
+
+      const response =
+        await amadeus.shopping.flightOffersSearch.get(params)
+
+      return (response.data as unknown as FlightOffer[]).map((flight) => ({
         price: flight.price.total,
         currency: flight.price.currency,
-        departure: flight.itineraries[0].segments[0].departure.iataCode,
-        arrival: flight.itineraries[0].segments[0].arrival.iataCode,
+        departureAirport:
+          flight.itineraries[0].segments[0].departure.iataCode,
+        arrivalAirport:
+          flight.itineraries[0].segments[0].arrival.iataCode,
         departureTime:
           flight.itineraries[0].segments[0].departure.at,
         arrivalTime:
@@ -39,9 +104,14 @@ export const searchFlightsTool = tool({
         airline:
           flight.itineraries[0].segments[0].carrierCode
       }))
-    } catch (error: any) {
-      console.error("Amadeus error:", error.message)
-      return { error: "Failed to search flights" }
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error("Amadeus error:", message)
+
+      return {
+        error: "Failed to search flights"
+      }
     }
   }
 })
@@ -53,27 +123,46 @@ export const searchHotelsTool = tool({
   inputSchema: z.object({
     cityCode: z.string().describe("IATA city code, example: PAR"),
     checkInDate: z.string().describe("Format YYYY-MM-DD"),
-    checkOutDate: z.string().describe("Format YYYY-MM-DD")
+    checkOutDate: z.string().describe("Format YYYY-MM-DD"),
+    adults: z.number().min(1).default(1)
   }),
 
-  execute: async ({ cityCode, checkInDate, checkOutDate }) => {
+  execute: async ({ cityCode, checkInDate, checkOutDate, adults }) => {
     try {
-      const response = await amadeus.shopping.hotelOffersSearch.get({
-        cityCode,
-        checkInDate,
-        checkOutDate,
-        adults: "1",
-        roomQuantity: "1"
+      // Step 1 (Amadeus v11+): resolve city code → hotel IDs
+      const hotelsRes = await amadeus.referenceData.locations.hotels.byCity.get({
+        cityCode
       })
 
-      return response.data.map((hotel: any) => ({
-        name: hotel.hotel.name,
-        rating: hotel.hotel.rating,
-        price: hotel.offers?.[0]?.price?.total,
-        currency: hotel.offers?.[0]?.price?.currency
+      if (!hotelsRes.data.length) {
+        return { error: `No hotels found in city: ${cityCode}` }
+      }
+
+      // Take the first 20 hotel IDs to avoid oversized requests
+      const hotelIds = (hotelsRes.data as unknown as HotelListItem[])
+        .slice(0, 20)
+        .map((h) => h.hotelId)
+        .join(",")
+
+      // Step 2: fetch available offers for those hotels
+      const offersRes = await amadeus.shopping.hotelOffersSearch.get({
+        hotelIds,
+        checkInDate,
+        checkOutDate,
+        adults: adults.toString()
+      })
+
+      return (offersRes.data as unknown as HotelOffer[]).map((hotel) => ({
+        hotelId:  hotel.hotel.hotelId,
+        name:     hotel.hotel.name,
+        rating:   hotel.hotel.rating,
+        price:    hotel.offers?.[0]?.price?.total,
+        currency: hotel.offers?.[0]?.price?.currency,
+        room:     hotel.offers?.[0]?.room?.typeEstimated?.category
       }))
-    } catch (error: any) {
-      console.error("Amadeus error:", error.message)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error("Amadeus error:", message)
       return { error: "Failed to search hotels" }
     }
   }
@@ -89,23 +178,27 @@ export const searchRestaurantsTool = tool({
   }),
 
   execute: async ({ city }) => {
-    const geoRes: any = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${city}&key=${process.env.GOOGLE_MAPS_API_KEY}`
-    )
+    try {
+      const geoRes = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${process.env.GOOGLE_MAPS_API_KEY}`
+      )
+      const geoData = (await geoRes.json()) as { results: GeoResult[] }
+      const { lat, lng } = geoData.results[0].geometry.location
 
-    const geoData = await geoRes.json()
-    const { lat, lng } = geoData.results[0].geometry.location
+      const placesRes = await fetch(
+        `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=3000&type=restaurant&key=${process.env.GOOGLE_MAPS_API_KEY}`
+      )
+      const placesData = (await placesRes.json()) as { results: PlaceResult[] }
 
-    const placesRes = await fetch(
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=3000&type=restaurant&key=${process.env.GOOGLE_MAPS_API_KEY}`
-    )
-
-    const placesData: any = await placesRes.json()
-
-    return placesData.results.map((place: any) => ({
-      name: place.name,
-      rating: place.rating,
-      address: place.vicinity
-    }))
+      return placesData.results.map((place) => ({
+        name:    place.name,
+        rating:  place.rating,
+        address: place.vicinity
+      }))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error("Google Maps error:", message)
+      return { error: "Failed to find restaurants" }
+    }
   }
 })

@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useApp } from "ink";
 import type { ModelMessage } from "ai";
-import { runAgent } from "../emailAgent/run.ts";
+import { runAgent } from "../orchestratorAgent/run.ts";
 import { MessageList, type Message } from "./components/MessageList.tsx";
 import { ToolCall, type ToolCallProps } from "./components/ToolCall.tsx";
 import { Spinner } from "./components/Spinner.tsx";
@@ -106,7 +106,7 @@ export function App() {
     <Box flexDirection="column" padding={1}>
       <Box marginBottom={1}>
         <Text bold color="magenta">
-          🤖 AI Agent
+          🤖 AI Orchestrator
         </Text>
         <Text dimColor> (type "exit" to quit)</Text>
       </Box>
