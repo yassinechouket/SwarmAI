@@ -1,9 +1,9 @@
 import "dotenv/config";
 import { streamText, type ModelMessage, type Tool } from "ai";
 import {executeTool} from "./executeTool.ts";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getTracer,Laminar } from "@lmnr-ai/lmnr";
-import { SYSTEM_PROMPT } from "./system/prompt.ts";
+import { getSystemPrompt } from "./system/prompt.ts";
 import {
   estimateMessagesTokens,
   getModelLimits,
@@ -18,8 +18,8 @@ import { filterCompatibleMessages } from "./system/filterMessages.ts";
 import type { AgentCallbacks, ToolCallInfo } from "../types.ts";
 import { tools } from "./tools/index.ts";
 import { es } from "zod/v4/locales";
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 });
 
 
@@ -27,7 +27,7 @@ Laminar.initialize({
   projectApiKey:process.env.LMNR_PROJECT_API_KEY,
 })
 
-const MODEL_NAME = "gpt-4o-mini";
+const MODEL_NAME = "gemini-3-flash-preview";
 
 export async function runAgent(
   userMessage: string,
@@ -40,7 +40,7 @@ export async function runAgent(
 
   let messages: ModelMessage[] = [
     { role: "system",
-      content: SYSTEM_PROMPT,
+      content: getSystemPrompt(),
     },...workingHistory,
     { role: "user", content: userMessage },
   ];
@@ -55,7 +55,7 @@ export async function runAgent(
 
   while (true) {
     const result = streamText({
-      model: openai(MODEL_NAME),
+      model: google(MODEL_NAME),
       messages,
       tools,
       experimental_telemetry: {

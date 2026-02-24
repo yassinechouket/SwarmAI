@@ -13,24 +13,14 @@ export const filterCompatibleMessages = (
       return true;
     }
 
-    // Keep assistant messages that have text content
+    // Keep all assistant messages — including pure tool-call turns.
+    // Dropping tool-call-only assistant messages breaks the conversation:
+    // the subsequent tool-result messages reference call IDs that the API
+    // can no longer find, producing "No tool call found for call_id …".
     if (msg.role === "assistant") {
       const content = msg.content;
-      if (typeof content === "string" && content.trim()) {
-        return true;
-      }
-      // Check for array content with text parts
-      if (Array.isArray(content)) {
-        const hasTextContent = content.some((part: unknown) => {
-          if (typeof part === "string" && part.trim()) return true;
-          if (typeof part === "object" && part !== null && "text" in part) {
-            const textPart = part as { text?: string };
-            return textPart.text && textPart.text.trim();
-          }
-          return false;
-        });
-        return hasTextContent;
-      }
+      if (typeof content === "string") return content.trim().length > 0;
+      if (Array.isArray(content) && content.length > 0) return true;
     }
 
     // Keep tool messages

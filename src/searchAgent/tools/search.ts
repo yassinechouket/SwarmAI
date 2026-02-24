@@ -3,7 +3,6 @@ import { tool } from "ai";
 import { z } from "zod";
 import { ChromaClient } from "chromadb";
 import { embed } from "ai";
-import { openai } from "@ai-sdk/openai";
 
 const tavilyClient = tavily({
   apiKey: process.env.TAVILY_API_KEY,

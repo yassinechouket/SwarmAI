@@ -1,5 +1,5 @@
 import { generateText, type ModelMessage } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { google } from "@ai-sdk/google";
 import { extractMessageText } from "./tokenEstimator.ts";
 
 const SUMMARIZATION_PROMPT = `You are a conversation summarizer. Your task is to create a concise summary of the conversation so far that preserves:
@@ -51,7 +51,7 @@ export async function compactConversation(
   const conversationText = messagesToText(conversationMessages);
 
   const { text: summary } = await generateText({
-    model: openai(model),
+    model: google(model),
     prompt: SUMMARIZATION_PROMPT + conversationText,
   });
 

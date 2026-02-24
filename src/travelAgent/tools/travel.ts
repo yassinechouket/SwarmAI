@@ -7,7 +7,23 @@ const amadeus = new Amadeus({
   clientSecret: process.env.AMADEUS_API_SECRET ?? ""
 })
 
-
+/**
+ * Amadeus SDK rejects with a ResponseError object (not a native JS Error).
+ * Shape: { code: string, response: { body: string, result: unknown } }
+ * This helper extracts a readable message from any thrown value.
+ */
+function extractAmadeusError(err: unknown): string {
+  if (err !== null && typeof err === "object") {
+    const e = err as Record<string, unknown>
+    const result = (e.response as Record<string, unknown> | undefined)?.result
+    if (result) return JSON.stringify(result)
+    if (typeof e.code === "string") return e.code
+    const body = (e.response as Record<string, unknown> | undefined)?.body
+    if (typeof body === "string") return body
+  }
+  if (err instanceof Error) return err.message
+  return String(err)
+}
 
 interface FlightSegment {
   departure: { iataCode: string; at: string }
@@ -106,12 +122,9 @@ export const searchFlightsTool = tool({
       }))
 
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error("Amadeus error:", message)
-
-      return {
-        error: "Failed to search flights"
-      }
+      const message = extractAmadeusError(err)
+      console.error("Amadeus flights error:", message)
+      return { error: `Failed to search flights: ${message}` }
     }
   }
 })
@@ -161,9 +174,9 @@ export const searchHotelsTool = tool({
         room:     hotel.offers?.[0]?.room?.typeEstimated?.category
       }))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error("Amadeus error:", message)
-      return { error: "Failed to search hotels" }
+      const message = extractAmadeusError(err)
+      console.error("Amadeus hotels error:", message)
+      return { error: `Failed to search hotels: ${message}` }
     }
   }
 })
@@ -198,7 +211,7 @@ export const searchRestaurantsTool = tool({
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       console.error("Google Maps error:", message)
-      return { error: "Failed to find restaurants" }
+      return { error: `Failed to find restaurants: ${message}` }
     }
   }
 })

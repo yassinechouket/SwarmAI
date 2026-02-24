@@ -10,15 +10,20 @@ export const DEFAULT_THRESHOLD = 0.8;
  * Currently only includes GPT-5 models
  */
 const MODEL_LIMITS: Record<string, ModelLimits> = {
-  "gpt-5": {
-    inputLimit: 272000,
-    outputLimit: 128000,
-    contextWindow: 400000,
+  "gemini-2.0-flash": {
+    inputLimit: 1048576,
+    outputLimit: 8192,
+    contextWindow: 1048576,
   },
-  "gpt-5-mini": {
-    inputLimit: 272000,
-    outputLimit: 128000,
-    contextWindow: 400000,
+  "gemini-1.5-pro": {
+    inputLimit: 2097152,
+    outputLimit: 8192,
+    contextWindow: 2097152,
+  },
+  "gemini-1.5-flash": {
+    inputLimit: 1048576,
+    outputLimit: 8192,
+    contextWindow: 1048576,
   },
 };
 
